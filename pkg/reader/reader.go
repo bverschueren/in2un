@@ -50,8 +50,8 @@ func NewInsightsReader(path string) (*InsightsReader, error) {
 	}
 }
 
-func (ir *InsightsReader) ReadResource(resourceGroup, resourceName, namespace string) []*unstructured.Unstructured {
-	return readResources(ir.Reader, resourceGroup, resourceName, namespace)
+func (ir *InsightsReader) ReadResource(resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
+	return readResources(ir.Reader, resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind)
 }
 
 func (ir *InsightsReader) ReadLog(resourceGroup, resourceName, namespace, containerName string, previous bool) io.Reader {
@@ -75,14 +75,18 @@ func open(filename string) (*tar.Reader, error) {
 }
 
 // read a resource or log from an archive and return either an unstructed for resource or bytes.Buffer for logs
-func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace string) []*unstructured.Unstructured {
+func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
 	configRegex := &ResourceRegex{base: &ConfigRegex{BaseRegex: BaseRegex{resourceGroup: resourceGroup, namespace: namespace}}, resourceName: resourceName}
 	conditionalRegex := &ResourceRegex{base: &ConditionalRegex{BaseRegex: BaseRegex{resourceGroup: resourceGroup, namespace: namespace}}, resourceName: resourceName}
 	regs := []string{configRegex.getPart(), conditionalRegex.getPart()}
 
 	log.Debugf("Searching tar file for regex '%s'\n", regs)
-	var result []*unstructured.Unstructured
+	var result []unstructured.Unstructured
 	configMaps := deserializer.NewConfigMapData()
+	insightsDeserializer := deserializer.NewInsightsDeserializer(
+		deserializer.WithApiVersion(overrideApiVersion),
+		deserializer.WithKind(overrideKind),
+	)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -96,20 +100,23 @@ func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace string
 			log.Debugf("Found well-known path at '%s'\n", hdr.Name)
 			var raw bytes.Buffer
 			raw.ReadFrom(tr)
-			object, err := deserializer.JsonToUnstructed(raw.Bytes())
+			object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
 			if err != nil {
 				log.Fatal(err)
 			}
-			result = append(result, object)
-			return result
+			result = append(result, *object)
+			return &unstructured.UnstructuredList{
+				Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
+				Items:  result,
+			}
 		}
 		resourceFile := resourceFilename(regs, hdr.Name)
 		if resourceFile != "" {
 			var raw bytes.Buffer
 			raw.ReadFrom(tr)
-			object, err := deserializer.JsonToUnstructed(raw.Bytes())
+			object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
 			if err != nil {
-				// perhaps it's a configmap
+				// still fails, perhaps it's a configmap
 				namespace, name, key, err := configMapFromFilename(hdr.Name)
 				if err == nil {
 					configMaps.Upsert(namespace, name, key, raw.String())
@@ -117,12 +124,15 @@ func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace string
 					log.Debug(err)
 				}
 			} else {
-				result = append(result, object)
+				result = append(result, *object)
 			}
 		}
 	}
 	result = append(result, configMaps.Flatten()...)
-	return result
+	return &unstructured.UnstructuredList{
+		Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
+		Items:  result,
+	}
 }
 
 func readLogs(tr *tar.Reader, resourceGroup, resourceName, namespace, containerName string, previous bool) io.ReadCloser {

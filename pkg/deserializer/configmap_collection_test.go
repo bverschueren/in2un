@@ -166,13 +166,13 @@ func TestConfigMapFromFilename(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			name, namespace, key, err := configMapFromFilename(tc.in)
 
-			if err == nil {
-				if name != tc.expectedName || namespace != tc.expectedNamespace || key != tc.expectedKey {
-					t.Fatalf("Expected: (%s, %s, %s) got: (%s, %s, %s)", tc.expectedName, tc.expectedNamespace, tc.expectedKey, name, namespace, key)
-				}
-			} else {
+			if tc.expectedErr != nil {
 				if !errors.Is(err, tc.expectedErr) {
 					t.Fatalf("Expected err='%s', got err='%s'", tc.expectedErr, err)
+				}
+			} else {
+				if name != tc.expectedName || namespace != tc.expectedNamespace || key != tc.expectedKey {
+					t.Fatalf("Expected: (%s, %s, %s) got: (%s, %s, %s)", tc.expectedName, tc.expectedNamespace, tc.expectedKey, name, namespace, key)
 				}
 			}
 		})

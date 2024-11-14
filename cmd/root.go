@@ -46,7 +46,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	rootCmd.PersistentFlags().StringVarP(&LogLevel, "loglevel", "v", "error", "Logging level")
+	rootCmd.PersistentFlags().StringVarP(&LogLevel, "loglevel", "v", "warning", "Logging level")
 	rootCmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
 	rootCmd.PersistentFlags().StringVarP(&Active, "insights-file", "", "", "Insights file to read from")
 	viper.BindPFlag("active", rootCmd.PersistentFlags().Lookup("active"))
@@ -63,9 +63,10 @@ func initConfig() {
 	viper.SetConfigFile(ConfigFile)
 
 	if err := viper.ReadInConfig(); err != nil {
-		if !os.IsNotExist(err) {
-			fmt.Println("Can't read config:", err)
+		if os.IsNotExist(err) {
 			viper.WriteConfigAs(ConfigFile)
+		} else {
+			fmt.Println("Can't read config:", err)
 		}
 	}
 }

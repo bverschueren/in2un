@@ -18,6 +18,8 @@ package reader
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
+	"io/fs"
 	"log"
 	"reflect"
 	"testing"
@@ -30,7 +32,7 @@ type tarrable struct {
 	Body []byte
 }
 
-func createBufferedTar(in []tarrable) *bytes.Buffer {
+func generateBufferedTar(in []tarrable) *bytes.Buffer {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -53,9 +55,15 @@ func createBufferedTar(in []tarrable) *bytes.Buffer {
 	return &buf
 }
 
+func generateUnstructuredList(u ...unstructured.Unstructured) *unstructured.UnstructuredList {
+	return &unstructured.UnstructuredList{
+		Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
+		Items:  u}
+}
+
 func TestResourceFromInsights(t *testing.T) {
 	fakeObj := []byte(`{"metadata":{},"kind":"FakeKind","apiVersion":"Fake1.2"}`)
-	expectedObj := &unstructured.Unstructured{}
+	expectedObj := unstructured.Unstructured{}
 	_ = expectedObj.UnmarshalJSON(fakeObj)
 	var files = []tarrable{
 		tarrable{
@@ -109,99 +117,213 @@ func TestResourceFromInsights(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		resourceGroup string
-		namespace     string
-		resourceName  string
-		expected      []*unstructured.Unstructured
+		name                             string
+		resourceGroup                    string
+		namespace                        string
+		resourceName                     string
+		overrideApiVersion, overrideKind string
+		expected                         *unstructured.UnstructuredList
 	}{
 		{
-			name:          "return pods within a namespace",
-			resourceGroup: "pod",
-			namespace:     "openshift-multus",
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj},
+			name:               "return pods within a namespace",
+			resourceGroup:      "pod",
+			namespace:          "openshift-multus",
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj),
 		},
 		{
-			name:          "return pods from all namespaces",
-			resourceGroup: "pod",
-			namespace:     AllNamespaceValue,
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj, expectedObj},
+			name:               "return pods from all namespaces",
+			resourceGroup:      "pod",
+			namespace:          AllNamespaceValue,
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj, expectedObj),
 		},
 		{
-			name:          "return named pod from a namespace",
-			resourceGroup: "pod",
-			namespace:     "namespace",
-			resourceName:  "pod-name",
-			expected:      []*unstructured.Unstructured{expectedObj},
+			name:               "return named pod from a namespace",
+			resourceGroup:      "pod",
+			namespace:          "namespace",
+			resourceName:       "pod-name",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj),
 		},
 		{
-			name:          "return named co",
-			resourceGroup: "clusteroperator",
-			namespace:     "",
-			resourceName:  "network",
-			expected:      []*unstructured.Unstructured{expectedObj},
+			name:               "return named co",
+			resourceGroup:      "clusteroperator",
+			namespace:          "",
+			resourceName:       "network",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj),
 		},
 		{
-			name:          "return all co",
-			resourceGroup: "clusteroperator",
-			namespace:     "",
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj},
+			name:               "return all co",
+			resourceGroup:      "clusteroperator",
+			namespace:          "",
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj),
 		},
 		{
-			name:          "return named configmap w namespace",
-			resourceGroup: "configmap",
-			namespace:     "openshift-config",
-			resourceName:  "openshift-install",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj},
+			name:               "return named configmap w namespace",
+			resourceGroup:      "configmap",
+			namespace:          "openshift-config",
+			resourceName:       "openshift-install",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj),
 		},
 		{
-			name:          "return all configmap w namespace",
-			resourceGroup: "configmap",
-			namespace:     "openshift-config",
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj, expectedObj},
+			name:               "return all configmap w namespace",
+			resourceGroup:      "configmap",
+			namespace:          "openshift-config",
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj, expectedObj),
 		},
 		{
-			name:          "return all configmap across all namespaces",
-			resourceGroup: "configmap",
-			namespace:     AllNamespaceValue,
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj, expectedObj, expectedObj},
+			name:               "return all configmap across all namespaces",
+			resourceGroup:      "configmap",
+			namespace:          AllNamespaceValue,
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj, expectedObj, expectedObj),
 		},
 		{
-			name:          "return machineconfig",
-			resourceGroup: "machineconfig",
-			namespace:     "",
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj},
+			name:               "return machineconfig",
+			resourceGroup:      "machineconfig",
+			namespace:          "",
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj),
 		},
 		{
-			name:          "return all storageclass",
-			resourceGroup: "storageclass",
-			namespace:     "",
-			resourceName:  "",
-			expected:      []*unstructured.Unstructured{expectedObj, expectedObj},
+			name:               "return all storageclass",
+			resourceGroup:      "storageclass",
+			namespace:          "",
+			resourceName:       "",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj, expectedObj),
 		},
 		{
-			name:          "return named storageclass",
-			resourceGroup: "storageclass",
-			namespace:     "",
-			resourceName:  "standard-csi",
-			expected:      []*unstructured.Unstructured{expectedObj},
+			name:               "return named storageclass",
+			resourceGroup:      "storageclass",
+			namespace:          "",
+			resourceName:       "standard-csi",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj),
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tw := createBufferedTar(files)
+			tw := generateBufferedTar(files)
 			tr := tar.NewReader(tw)
-			got := readResources(tr, tc.resourceGroup, tc.resourceName, tc.namespace)
+			got := readResources(tr, tc.resourceGroup, tc.resourceName, tc.namespace, "", "")
 
 			if !reflect.DeepEqual(got, tc.expected) {
 				t.Fatalf("Expected: %v, got: %+v", tc.expected, got)
+			}
+			t.Logf("got: %v\n", got)
+		})
+	}
+}
+
+func TestNewInsightsReader(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		expected    *InsightsReader
+		expectedErr error
+	}{
+		{
+			name:        "return an InsightsReader",
+			path:        "../../testdata/fake-insights-archive",
+			expected:    &InsightsReader{Reader: new(tar.Reader), Path: "testdata/fake-insights-archive"},
+			expectedErr: nil,
+		},
+		{
+			name:        "return error for non-existing inpurt file",
+			path:        "../../testdata/non-existing-insights-archive",
+			expected:    nil,
+			expectedErr: fs.ErrNotExist,
+		},
+		{
+			name:        "return error for non-gzip inpurt file",
+			path:        "../../testdata/non-gzip-file",
+			expected:    nil,
+			expectedErr: ErrInvalidInsightsArchive,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewInsightsReader(tc.path)
+
+			if tc.expectedErr != nil {
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("Expected err='%s', got err='%s'", tc.expectedErr, err)
+				}
+			} else {
+				// path presense should suffice to verify if an instance is returned
+				if got != nil && tc.expected.Path == got.Path {
+					t.Fatalf("Expected: %v got: %v with", tc.expected, got)
+				}
+
+			}
+		})
+	}
+}
+
+func TestOpen(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		expected    *tar.Reader
+		expectedErr error
+	}{
+		{
+			name:        "return a tar.Reader",
+			path:        "../../testdata/fake-insights-archive",
+			expected:    &tar.Reader{},
+			expectedErr: nil,
+		},
+		{
+			name:        "return error for non-existing input file",
+			path:        "../../testdata/non-existing-insights-archive",
+			expected:    nil,
+			expectedErr: fs.ErrNotExist,
+		},
+		{
+			name:        "return error for non-gzip inpurt file",
+			path:        "../../testdata/non-gzip-file",
+			expected:    nil,
+			expectedErr: ErrInvalidInsightsArchive,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := open(tc.path)
+
+			if tc.expectedErr != nil {
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("Expected err='%s', got err='%s'", tc.expectedErr, err)
+				}
+			} else {
+				if got != nil {
+					if reflect.TypeOf(got) != reflect.TypeOf(tc.expected) {
+						t.Fatalf("Expected: %s got: %s with", reflect.TypeOf(tc.expected), reflect.TypeOf(got))
+					}
+				}
 			}
 		})
 	}
