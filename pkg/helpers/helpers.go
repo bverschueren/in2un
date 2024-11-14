@@ -25,7 +25,7 @@ import (
 // since we have no definitions, need to rely on a static list
 func Namespaced(name string) bool {
 	log.Debug("Using static list to check for namespacedness as best effort")
-	var clusterScoped = []string{"machineconfig", "machineconfigpool", "clusteroperator", "node", "storageclass"}
+	var clusterScoped = []string{"machineconfig", "machineconfigpool", "clusteroperator", "node", "storageclass", "hostsubnet"}
 	return !slices.Contains(clusterScoped, name)
 }
 
@@ -45,10 +45,12 @@ func Plural(singular string) string {
 func Unalias(alias string) string {
 	log.Debug("Using static alias map as best effort")
 	aliases := map[string]string{
-		"mc": "machineconfig",
-		"cm": "secret",
-		"co": "clusteroperator",
-		"ns": "namespace",
+		"mc":  "machineconfig",
+		"cm":  "secret",
+		"co":  "clusteroperator",
+		"ns":  "namespace",
+		"pv":  "persistentvolume",
+		"pvc": "persistentvolumeclaim",
 	}
 	if unalias, ok := aliases[alias]; ok {
 		return unalias

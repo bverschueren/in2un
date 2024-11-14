@@ -16,14 +16,20 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
+	"os"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/bverschueren/in2un/pkg/deserializer"
 	"github.com/bverschueren/in2un/pkg/reader"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/cli-runtime/pkg/printers"
+	"k8s.io/client-go/kubernetes/scheme"
 )
+
+var OverrideApiVersion, OverrideKind, Output string
 
 var getCmd = &cobra.Command{
 	Use:  "get",
@@ -41,23 +47,53 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		found := ir.ReadResource(resourceGroup, resourceName, Namespace)
-		if len(found) == 0 {
-			fmt.Printf("No resources found")
-			if len(Namespace) != 0 && !AllNamespaces {
-				fmt.Printf(" in %s namespace.\n", Namespace)
-			}
-		} else {
-			fmt.Println("NAME")
-			for _, f := range found {
-				fmt.Printf("%s\n", f.GetName())
-			}
-		}
-
+		found := ir.ReadResource(resourceGroup, resourceName, Namespace, OverrideApiVersion, OverrideKind)
+		handleOutput(Output, found)
 	},
+}
+
+func handleOutput(format string, obj *unstructured.UnstructuredList) {
+	if hasDummyFields(obj) {
+		log.Warning("Hint: use --api-version and --kind to override dummy values for missing fields in insights archives")
+	}
+	var printr printers.ResourcePrinter
+	switch format {
+	case "yaml":
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(&printers.YAMLPrinter{})
+		if err := printr.PrintObj(obj, os.Stdout); err != nil {
+			panic(err.Error())
+		}
+	case "json":
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(&printers.JSONPrinter{})
+		if err := printr.PrintObj(obj, os.Stdout); err != nil {
+			panic(err.Error())
+		}
+	case "name":
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(&printers.NamePrinter{})
+		if err := printr.PrintObj(obj, os.Stdout); err != nil {
+			panic(err.Error())
+		}
+	default: //table printer
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(printers.NewTablePrinter(printers.PrintOptions{}))
+		if err := printr.PrintObj(obj, os.Stdout); err != nil {
+			panic(err.Error())
+		}
+	}
+}
+
+func hasDummyFields(obj *unstructured.UnstructuredList) bool { //TODO: generic warning loop interface
+	if len(obj.Items) > 0 {
+		return obj.Items[0].Object["apiVersion"] == deserializer.MissingTypeMetaFieldValue || obj.Items[0].Object["kind"] == deserializer.MissingTypeMetaFieldValue
+	} else {
+		return false
+	}
 }
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-	getCmd.PersistentFlags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
+	//getCmd.PersistentFlags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
+	getCmd.Flags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
+	getCmd.Flags().StringVarP(&Output, "output", "o", "table", "Output format. One of: (json, yaml, name).")
+	getCmd.Flags().StringVar(&OverrideApiVersion, "api-version", "", "Override the apiVersion for the specified resource. By default the apiVersion is trimmed off resource in insights data")
+	getCmd.Flags().StringVar(&OverrideKind, "kind", "", "Override the apiVersion for the specified resource. By default the apiVersion is trimmed off resource in insights data")
 }

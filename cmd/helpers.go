@@ -44,10 +44,11 @@ func processArgs(args []string) (string, string) {
 func Unalias(alias string) string {
 	log.Debug("Using static alias map as best effort")
 	aliases := map[string]string{
-		"mc": "machineconfig",
-		"cm": "configmap",
-		"co": "clusteroperator",
-		"ns": "namespace",
+		"mc":  "machineconfig",
+		"mcp": "machineconfigpool",
+		"cm":  "configmap",
+		"co":  "clusteroperator",
+		"ns":  "namespace",
 	}
 	if unalias, ok := aliases[alias]; ok {
 		return unalias

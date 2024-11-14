@@ -64,13 +64,13 @@ func (c *ConfigMapData) Upsert(namespace, name, key, value string) {
 	}
 }
 
-func (c *ConfigMapData) Flatten() []*unstructured.Unstructured {
-	out := []*unstructured.Unstructured{}
+func (c *ConfigMapData) Flatten() []unstructured.Unstructured {
+	out := []unstructured.Unstructured{}
 	for namespace, nsContent := range c.data {
 		for name := range nsContent {
 			data := c.data[namespace][name]
 			object := wrapConfigMap(name, namespace, data)
-			out = append(out, object)
+			out = append(out, *object)
 		}
 	}
 	return out
@@ -86,6 +86,10 @@ func wrapConfigMap(name, namespace string, data map[string]string) *unstructured
 			Name:      name,
 		},
 		Data: data,
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
 	}
 	result, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&newObject)
 	if err != nil {
