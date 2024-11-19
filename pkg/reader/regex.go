@@ -16,12 +16,18 @@ limitations under the License.
 package reader
 
 import (
+	"regexp"
+
 	"github.com/bverschueren/in2un/pkg/helpers"
 	log "github.com/sirupsen/logrus"
 )
 
 type IRegex interface {
-	getPart() string
+	Build() string
+	// Do the regex on the incoming string
+	// return true to stop or false to continue after a match
+	// return matching string result
+	Do(string) (bool, string)
 }
 
 func NewRegex(resourceGroup, resourceName, namespace string) IRegex {
@@ -36,7 +42,14 @@ type Regex struct {
 	resourceGroup, resourceName, namespace string
 }
 
-func (b *Regex) getPart() string { return "" }
+func (r *Regex) Build() string {
+	log.Tracef("Build in Regex")
+	return ""
+}
+
+func (r *Regex) Do(in string) (bool, string) {
+	return do(r, in)
+}
 
 type ConfigRegex struct {
 	Regex
@@ -59,11 +72,13 @@ func NewConfigRegex(resourceGroup, resourceName, namespace string) IRegex {
 	}
 }
 
-func (c *ConfigRegex) getPart() string {
+func (c *ConfigRegex) Build() string {
+	log.Tracef("Build in ConfigRegex")
 	resourceGroupPart := helpers.Plural(c.resourceGroup)
 	if c.resourceGroup == "all" {
 		resourceGroupPart = `[a-z0-9\-]+`
 	}
+	// TODO: fix that `get storage` also matches storageclass resources
 	reg := `^config(/storage)?/` + resourceGroupPart + `/`
 	if helpers.Namespaced(c.resourceGroup) {
 		if c.namespace != "" {
@@ -73,7 +88,7 @@ func (c *ConfigRegex) getPart() string {
 			reg += c.namespace + `/`
 		}
 	}
-	log.Tracef("got part '%s'", reg)
+	log.Tracef("got part '%s' in ConfigRegex", reg)
 	return reg
 }
 
@@ -98,13 +113,56 @@ func NewConditionalRegex(resourceGroup, resourceName, namespace string) IRegex {
 	}
 }
 
-func (c *ConditionalRegex) getPart() string {
+func (c *ConditionalRegex) Build() string {
+	log.Tracef("Build in ConditionalRegex")
 	if c.namespace == "_all_" {
 		c.namespace = `[a-z0-9\-]+`
 	}
 	reg := `^conditional/namespaces/` + c.namespace + `/` + helpers.Plural(c.resourceGroup) + `/`
-	log.Tracef("got part '%s'", reg)
+	log.Tracef("got part '%s' in ConditionalRegex", reg)
 	return reg
+}
+
+type OperatorConfigRegex struct {
+	Regex
+	base IRegex
+}
+
+func NewOperatorConfigRegex(resourceGroup, resourceName string) IRegex {
+	return &OperatorConfigRegex{
+		Regex: Regex{
+			resourceGroup: resourceGroup,
+			resourceName:  resourceName,
+			namespace:     "",
+		},
+		base: NewRegex(
+			resourceGroup,
+			resourceName,
+			"",
+		),
+	}
+}
+
+// limit to /config/operatorconfig>.json
+func (o *OperatorConfigRegex) Build() string {
+	log.Tracef("Build in OperatorConfigRegex")
+	resourceGroupPart := helpers.Plural(o.resourceGroup)
+	reg := `^config(/storage)?/` + resourceGroupPart + `.json`
+	log.Tracef("got part '%s' in OperatorConfigRegex", reg)
+	return reg
+}
+
+func (c *OperatorConfigRegex) Do(in string) (bool, string) {
+	log.Tracef("scanning '%s'", in)
+	r := c.Build()
+	log.Tracef("with '%s'", r)
+	re := regexp.MustCompile(r)
+	match := re.FindString(in)
+	if match != "" {
+		log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
+		return true, match
+	}
+	return true, ""
 }
 
 type ResourceRegex struct {
@@ -124,23 +182,41 @@ func NewResourceRegex(resourceGroup, resourceName, namespace string, base IRegex
 	}
 }
 
-func (r *ResourceRegex) getPart() string {
-	reg := r.base.getPart()
+func (r *ResourceRegex) Build() string {
+	log.Tracef("Build in ResourceRegex")
+	reg := r.base.Build()
 	if r.resourceName != "" {
 		// configmaps are expanded (namespace/cm-name/key) in insights, other resources are json (namespace/obj-name.json)
 		reg += r.resourceName + `(.json|/[a-z0-9\-\.]+)$`
 	} else {
 		reg += `[a-z0-9\.\-]+(.json|/[a-z0-9\-\.]+)(.json)?$`
 	}
-	log.Tracef("got part '%s'", reg)
+	log.Tracef("got part '%s' in ResourceRegex", reg)
 	return reg
+}
+
+func (c *ResourceRegex) Do(in string) (bool, string) {
+	log.Tracef("Do in ResourceRegex")
+	log.Tracef("scanning '%s'", in)
+	r := c.Build()
+	log.Tracef("with '%s'", r)
+	re := regexp.MustCompile(r)
+	match := re.FindString(in)
+	if match != "" {
+		if wellKnownInsightsJson(match) {
+			log.Debugf("Found well-known path at '%s'\n", match)
+			return true, match // stop processing next tokens
+		}
+		log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
+		return false, match
+	}
+	return false, ""
 }
 
 type LogRegex struct {
 	containerName string
 	previous      bool
 	Regex
-	base Regex
 }
 
 func NewLogRegex(resourceGroup, resourceName, namespace, containerName string, previous bool) IRegex {
@@ -155,8 +231,9 @@ func NewLogRegex(resourceGroup, resourceName, namespace, containerName string, p
 	}
 }
 
-func (r *LogRegex) getPart() string {
-	reg := r.base.getPart()
+func (r *LogRegex) Build() string {
+	log.Tracef("Build in LogRegex")
+	reg := ""
 	// logs require a specific resourceName
 	if r.resourceName == "" {
 		return ""
@@ -172,6 +249,41 @@ func (r *LogRegex) getPart() string {
 	} else {
 		reg += `_current`
 	}
-	log.Tracef("got part '%s'", reg)
+	log.Tracef("got part '%s' in LogRegex", reg)
 	return reg + `.log`
+}
+
+func (r *LogRegex) Do(in string) (bool, string) {
+	return do(r, in)
+}
+
+type ResourceListRegex struct {
+	Regex
+}
+
+func NewResourceListRegex() IRegex {
+	return &ResourceListRegex{}
+}
+
+func (r *ResourceListRegex) Build() string {
+	log.Tracef("Build in ResourceListRegex")
+	return `^config(/storage)?/[a-z0-9]+(/|.json)`
+}
+
+func (r *ResourceListRegex) Do(in string) (bool, string) {
+	return do(r, in)
+}
+
+func do(r IRegex, in string) (bool, string) {
+	log.Tracef("do Regex with %+v", r)
+	reg := r.Build()
+	log.Tracef("scanning '%s'", in)
+	log.Tracef("with '%s'", reg)
+	re := regexp.MustCompile(reg)
+	match := re.FindString(in)
+	if match != "" {
+		log.Tracef("found match '%s' for '%s' on %s\n", match, reg, in)
+		return false, match
+	}
+	return false, ""
 }

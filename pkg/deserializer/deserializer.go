@@ -83,7 +83,7 @@ func JsonToUnstructed(raw []byte) (*unstructured.Unstructured, error) {
 	result := &unstructured.Unstructured{}
 	// First, try to unmarshal the raw json into an unstructured
 	if err := result.UnmarshalJSON(raw); err != nil {
-		return nil, fmt.Errorf("Error when trying to unmarshal into unstructured: %v", err)
+		return nil, fmt.Errorf("error when trying to unmarshal into unstructured: %v", err)
 	}
 	return result, nil
 }

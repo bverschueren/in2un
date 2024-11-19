@@ -51,7 +51,29 @@ func NewInsightsReader(path string) (*InsightsReader, error) {
 }
 
 func (ir *InsightsReader) ReadResource(resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
-	return readResources(ir.Reader, resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind)
+	configRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
+		NewConfigRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		))
+	conditionalRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
+		NewConditionalRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		),
+	)
+	operatorConfigRegex := NewOperatorConfigRegex(
+		resourceGroup,
+		resourceName,
+	)
+	return readResources(ir.Reader, []IRegex{configRegex, conditionalRegex, operatorConfigRegex}, overrideApiVersion, overrideKind)
+}
+
+func (ir *InsightsReader) ReadResourceTypes() *map[string]bool {
+	resourceListRegex := NewResourceListRegex()
+	return readResourceTypes(ir.Reader, []IRegex{resourceListRegex})
 }
 
 func (ir *InsightsReader) ReadLog(resourceGroup, resourceName, namespace, containerName string, previous bool) io.Reader {
@@ -75,21 +97,7 @@ func open(filename string) (*tar.Reader, error) {
 }
 
 // read a resource or log from an archive and return either an unstructed for resource or bytes.Buffer for logs
-func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
-	configRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
-		NewConfigRegex(
-			resourceGroup,
-			resourceName,
-			namespace,
-		))
-	conditionalRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
-		NewConditionalRegex(
-			resourceGroup,
-			resourceName,
-			namespace,
-		),
-	)
-	regs := []string{configRegex.getPart(), conditionalRegex.getPart()}
+func readResources(tr *tar.Reader, regs []IRegex, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
 
 	log.Debugf("Searching tar file for regex '%s'\n", regs)
 	var result []unstructured.Unstructured
@@ -106,36 +114,30 @@ func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overr
 		if err != nil {
 			log.Fatal(err)
 		}
-		// check if the resourceGroup is found on a deviant but well-known path
-		if hdr.Name == wellKnownInsightsJson(resourceGroup) {
-			log.Debugf("Found well-known path at '%s'\n", hdr.Name)
-			var raw bytes.Buffer
-			raw.ReadFrom(tr)
-			object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
-			if err != nil {
-				log.Fatal(err)
-			}
-			result = append(result, *object)
-			return &unstructured.UnstructuredList{
-				Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
-				Items:  result,
-			}
-		}
-		resourceFile := resourceFilename(regs, hdr.Name)
-		if resourceFile != "" {
-			var raw bytes.Buffer
-			raw.ReadFrom(tr)
-			object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
-			if err != nil {
-				// still fails, perhaps it's a configmap
-				namespace, name, key, err := configMapFromFilename(hdr.Name)
-				if err == nil {
-					configMaps.Upsert(namespace, name, key, raw.String())
-				} else {
-					log.Debug(err)
+		for _, reg := range regs {
+			stop, resourceFile := reg.Do(hdr.Name)
+			if resourceFile != "" {
+				var raw bytes.Buffer
+				raw.ReadFrom(tr)
+				object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
+				if stop {
+					result = append(result, *object)
+					return &unstructured.UnstructuredList{
+						Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
+						Items:  result,
+					}
 				}
-			} else {
-				result = append(result, *object)
+				if err != nil {
+					// still fails, perhaps it's a configmap
+					namespace, name, key, err := configMapFromFilename(resourceFile)
+					if err == nil {
+						configMaps.Upsert(namespace, name, key, raw.String())
+					} else {
+						log.Debug(err)
+					}
+				} else {
+					result = append(result, *object)
+				}
 			}
 		}
 	}
@@ -146,9 +148,32 @@ func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overr
 	}
 }
 
+func readResourceTypes(tr *tar.Reader, regs []IRegex) *map[string]bool {
+	log.Debugf("Searching tar file for regex '%s'\n", regs)
+	result := make(map[string]bool)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break // end of archive
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, reg := range regs {
+			_, resourceFile := reg.Do(hdr.Name)
+			if resourceFile != "" {
+				found := resourceTypeFromResourcePath(resourceFile)
+				log.Tracef("found resourceType '%s' from file '%s'", found, resourceFile)
+				result[resourceTypeFromResourcePath(resourceFile)] = true
+			}
+		}
+	}
+	return &result
+}
+
 func readLogs(tr *tar.Reader, resourceGroup, resourceName, namespace, containerName string, previous bool) io.ReadCloser {
 	regex := NewLogRegex(resourceGroup, resourceName, namespace, containerName, previous)
-	regs := []string{regex.getPart()}
+	regs := []IRegex{regex}
 	log.Debugf("Searching tar file for regex '%s'\n", regs)
 	for {
 		hdr, err := tr.Next()
@@ -158,37 +183,43 @@ func readLogs(tr *tar.Reader, resourceGroup, resourceName, namespace, containerN
 		if err != nil {
 			log.Fatal(err)
 		}
-		resourceFile := resourceFilename(regs, hdr.Name)
-		if resourceFile != "" {
-			if containerName == "" {
-				containerName, _ := containerAndVersionFromFilename(resourceFile)
-				log.Printf("Defaulted container \"%s\"\n", containerName)
-				// TODO: continue looping tar headers and append additional containers to the previous output
+		for _, reg := range regs {
+			_, resourceFile := reg.Do(hdr.Name)
+			if resourceFile != "" {
+				if containerName == "" {
+					containerName, _ := containerAndVersionFromFilename(resourceFile)
+					log.Printf("Defaulted container \"%s\"\n", containerName)
+					// TODO: continue looping tar headers and append additional containers to the previous output
+				}
+				return io.NopCloser(tr)
 			}
-			break
 		}
 	}
 	return io.NopCloser(tr)
 }
 
-func wellKnownInsightsJson(resourceGroup string) string {
-	return `config/` + resourceGroup + `.json`
+func wellKnownInsightsJson(resourceGroup string) bool {
+	log.Tracef("checking for well-known resource")
+	re := regexp.MustCompile(`config/[a-z0-9]+.json`)
+	log.Tracef("matching '%s' for '%s'", resourceGroup, re)
+	return re.Match([]byte(resourceGroup))
+	//return `config/` + resourceGroup + `.json`
 }
 
 // check if the current file header name matches any of the regexes
-func resourceFilename(regs []string, in string) string {
-	log.Tracef("scanning '%s'", in)
-	for _, r := range regs {
-		log.Tracef("with '%s'", r)
-		re := regexp.MustCompile(r)
-		match := re.FindString(in)
-		if match != "" {
-			log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
-			return match
-		}
-	}
-	return ""
-}
+//func resourceFilename(regs []string, in string) string {
+//	log.Tracef("scanning '%s'", in)
+//	for _, r := range regs {
+//		log.Tracef("with '%s'", r)
+//		re := regexp.MustCompile(r)
+//		match := re.FindString(in)
+//		if match != "" {
+//			log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
+//			return match
+//		}
+//	}
+//	return ""
+//}
 
 func containerAndVersionFromFilename(filename string) (string, string) {
 	base := path.Base(strings.TrimSuffix(filename, ".log"))
@@ -206,4 +237,10 @@ func configMapFromFilename(tarFilePath string) (namespace, name, key string, err
 		return "", "", "", deserializer.ErrUnknownResourcePath
 	}
 	return parts[2], parts[3], parts[4], nil
+}
+
+func resourceTypeFromResourcePath(in string) string {
+	resourceFile := strings.TrimSuffix(in, "/")
+	_, file := path.Split(resourceFile)
+	return strings.TrimSuffix(file, ".json")
 }

@@ -90,7 +90,7 @@ func hasDummyFields(obj *unstructured.UnstructuredList) bool { //TODO: generic w
 }
 
 func init() {
-	rootCmd.AddCommand(getCmd)
+	RootCmd.AddCommand(getCmd)
 	//getCmd.PersistentFlags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
 	getCmd.Flags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
 	getCmd.Flags().StringVarP(&Output, "output", "o", "table", "Output format. One of: (json, yaml, name).")

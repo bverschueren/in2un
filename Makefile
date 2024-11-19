@@ -19,13 +19,17 @@ fmt:
 vet:
 	go vet *.go
 
+.PHONY: staticheck
+staticcheck:
+	staticcheck ./...
+
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
 
 bin: clean $(BINARY)
 
-build: test fmt vet bin
+build: test fmt vet staticcheck bin
 
 $(BINARY):
 	$(SYSTEM) go build $(BUILDOPTS) -o $(MKFILE_DIR)/$(BINARY)

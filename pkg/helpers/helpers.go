@@ -46,7 +46,7 @@ func Unalias(alias string) string {
 	log.Debug("Using static alias map as best effort")
 	aliases := map[string]string{
 		"mc":  "machineconfig",
-		"cm":  "secret",
+		"cm":  "configmap",
 		"co":  "clusteroperator",
 		"ns":  "namespace",
 		"pv":  "persistentvolume",

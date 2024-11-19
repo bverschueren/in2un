@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	rootCmd = &cobra.Command{
+	RootCmd = &cobra.Command{
 		Use:   "in2un",
 		Args:  cobra.MinimumNArgs(1),
 		Short: "Parse Insights data as unstructed data or raw log lines.",
@@ -37,7 +37,7 @@ var (
 )
 
 func Execute() {
-	err := rootCmd.Execute()
+	err := RootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
 	}
@@ -45,11 +45,11 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	rootCmd.PersistentFlags().StringVarP(&LogLevel, "loglevel", "v", "warning", "Logging level")
-	rootCmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
-	rootCmd.PersistentFlags().StringVarP(&Active, "insights-file", "", "", "Insights file to read from")
-	viper.BindPFlag("active", rootCmd.PersistentFlags().Lookup("active"))
+	RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	RootCmd.PersistentFlags().StringVarP(&LogLevel, "loglevel", "v", "warning", "Logging level")
+	RootCmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
+	RootCmd.PersistentFlags().StringVarP(&Active, "insights-file", "", "", "Insights file to read from")
+	viper.BindPFlag("active", RootCmd.PersistentFlags().Lookup("active"))
 }
 
 func initConfig() {

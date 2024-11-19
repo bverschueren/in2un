@@ -229,7 +229,24 @@ func TestResourceFromInsights(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tw := generateBufferedTar(files)
 			tr := tar.NewReader(tw)
-			got := readResources(tr, tc.resourceGroup, tc.resourceName, tc.namespace, "", "")
+			configRegex := NewResourceRegex(tc.resourceGroup, tc.resourceName, tc.namespace,
+				NewConfigRegex(
+					tc.resourceGroup,
+					tc.resourceName,
+					tc.namespace,
+				))
+			conditionalRegex := NewResourceRegex(tc.resourceGroup, tc.resourceName, tc.namespace,
+				NewConditionalRegex(
+					tc.resourceGroup,
+					tc.resourceName,
+					tc.namespace,
+				),
+			)
+			operatorConfigRegex := NewOperatorConfigRegex(
+				tc.resourceGroup,
+				tc.resourceName,
+			)
+			got := readResources(tr, []IRegex{configRegex, conditionalRegex, operatorConfigRegex}, "", "")
 
 			if !reflect.DeepEqual(got, tc.expected) {
 				t.Fatalf("Expected: %+v, got: %+v", tc.expected, got)
@@ -328,88 +345,6 @@ func TestOpen(t *testing.T) {
 	}
 }
 
-//func TestResourceRegex(t *testing.T) {
-//	tests := []struct {
-//		name          string
-//		resourceGroup string
-//		namespace     string
-//		resourceName  string
-//		expected      string
-//	}{
-//		{
-//			name:          "return regex for crd w/o namespace",
-//			resourceGroup: "crd",
-//			namespace:     "",
-//			resourceName:  "",
-//			expected:      `[a-z]+(/storage)?/crds?/[a-z0-9\.-]+(.json|/[a-z0-9\-]+)$`,
-//		},
-//		{
-//			name:          "return regex for pods in a namespace",
-//			resourceGroup: "pod",
-//			namespace:     "namespace",
-//			resourceName:  "",
-//			expected:      `[a-z]+(/storage)?/pods?/namespace/[a-z0-9\.-]+(.json|/[a-z0-9\-]+)$`,
-//		},
-//		{
-//			name:          "return regex for specific pod in a namespace",
-//			resourceGroup: "pod",
-//			namespace:     "namespace",
-//			resourceName:  "podname",
-//			expected:      `[a-z]+(/storage)?/pods?/namespace/podname(.json|/[a-z0-9\-]+)$`,
-//		},
-//	}
-//
-//	for _, tc := range tests {
-//		t.Run(tc.name, func(t *testing.T) {
-//			got := resourceRegex(tc.resourceGroup, tc.namespace, tc.resourceName)
-//
-//			if got != tc.expected {
-//				t.Fatalf("Expected : %v, got: %v", tc.expected, got)
-//			}
-//			t.Logf("got: %v", got)
-//		})
-//	}
-//}
-
-func TestResourceFilename(t *testing.T) {
-	tests := []struct {
-		name     string
-		regex    []string
-		filename string
-		expected string
-	}{
-		{
-			name:     "return filename when regex matches",
-			regex:    []string{`[a-z]+/pods?/openshift-cluster-samples-operator/[a-z0-9\.-]*`},
-			filename: "config/pod/openshift-cluster-samples-operator/cluster-samples-operator-7bdb9db984-2k2l9.json",
-			expected: "config/pod/openshift-cluster-samples-operator/cluster-samples-operator-7bdb9db984-2k2l9.json",
-		},
-		{
-			name:     "return empty string when regex does not match",
-			regex:    []string{`[a-z]+/pods?/openshift-cluster-samples-operator/[a-z0-9\.-]*`},
-			filename: "config/pod/anothernamespace/cluster-samples-operator-7bdb9db984-2k2l9.json",
-			expected: "",
-		},
-		{
-			name:     "return filename for non namespaced resource",
-			regex:    []string{`[a-z]+/nodes?/[a-z0-9\.-]*`},
-			filename: "config/node/bverschu-6dh2k-worker-0-67hrt.json",
-			expected: "config/node/bverschu-6dh2k-worker-0-67hrt.json",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := resourceFilename(tc.regex, tc.filename)
-
-			if got != tc.expected {
-				t.Fatalf("Expected : %s, got: %s", tc.expected, got)
-			}
-			t.Logf("got: %v", got)
-		})
-	}
-}
-
 func TestContainerAndVersionFromFilename(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -447,50 +382,3 @@ func TestContainerAndVersionFromFilename(t *testing.T) {
 		})
 	}
 }
-
-//func TestLogRegex(t *testing.T) {
-//	tests := []struct {
-//		name                                                  string
-//		resourceGroup, namespace, resourceName, containerName string
-//		expectedRegex                                         string
-//		previous                                              bool
-//	}{
-//		{
-//			name:          "return regex for previous logs from specified ingress-operator pod",
-//			resourceGroup: "pod",
-//			resourceName:  "ingress-operator-65ccf4f77c-b2hv7",
-//			namespace:     "openshift-ingress-operator",
-//			containerName: "ingress-operator",
-//			previous:      true,
-//			expectedRegex: `[a-z]+(/storage)?/pods?/openshift-ingress-operator/logs/ingress-operator-65ccf4f77c-b2hv7/ingress-operator_previous.log`,
-//		},
-//		{
-//			name:          "return regex for current logs from specified ingress-operator pod",
-//			resourceGroup: "pod",
-//			resourceName:  "ingress-operator-65ccf4f77c-b2hv7",
-//			namespace:     "openshift-ingress-operator",
-//			containerName: "ingress-operator",
-//			previous:      false,
-//			expectedRegex: `[a-z]+(/storage)?/pods?/openshift-ingress-operator/logs/ingress-operator-65ccf4f77c-b2hv7/ingress-operator_current.log`,
-//		},
-//		{
-//			name:          "return regex for kube-rbac-proxy if no container name is specified",
-//			resourceGroup: "pod",
-//			resourceName:  "ingress-operator-65ccf4f77c-b2hv7",
-//			namespace:     "openshift-ingress-operator",
-//			containerName: "",
-//			previous:      false,
-//			expectedRegex: `[a-z]+(/storage)?/pods?/openshift-ingress-operator/logs/ingress-operator-65ccf4f77c-b2hv7/[a-z0-9\.\-]+_current.log`,
-//		},
-//	}
-//
-//	for _, tc := range tests {
-//		t.Run(tc.name, func(t *testing.T) {
-//			got := logRegex(tc.resourceGroup, tc.namespace, tc.resourceName, tc.containerName, tc.previous)
-//
-//			if got != tc.expectedRegex {
-//				t.Fatalf("Expected: '%s' got : '%s'", tc.expectedRegex, got)
-//			}
-//		})
-//	}
-//}

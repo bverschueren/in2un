@@ -53,7 +53,7 @@ func TestConfigResourceRegex(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			regex := NewResourceRegex(tc.resourceGroup, tc.resourceName, tc.namespace, NewConfigRegex(tc.resourceGroup, tc.resourceName, tc.namespace))
-			got := regex.getPart()
+			got := regex.Build()
 
 			if got != tc.expected {
 				t.Fatalf("Expected: %v, got: %v", tc.expected, got)
@@ -98,7 +98,7 @@ func TestConditionalResourceRegex(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			regex := NewResourceRegex(tc.resourceGroup, tc.resourceName, tc.namespace, NewConditionalRegex(tc.resourceGroup, tc.resourceName, tc.namespace))
-			got := regex.getPart()
+			got := regex.Build()
 
 			if got != tc.expected {
 				t.Fatalf("Expected: %v, got: %v", tc.expected, got)
@@ -150,7 +150,7 @@ func TestLogRegex(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			regex := NewLogRegex(tc.resourceGroup, tc.resourceName, tc.namespace, tc.containerName, tc.previous)
-			got := regex.getPart()
+			got := regex.Build()
 
 			if got != tc.expected {
 				t.Fatalf("Expected: %v, got: %v", tc.expected, got)
