@@ -76,8 +76,19 @@ func open(filename string) (*tar.Reader, error) {
 
 // read a resource or log from an archive and return either an unstructed for resource or bytes.Buffer for logs
 func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overrideApiVersion, overrideKind string) *unstructured.UnstructuredList {
-	configRegex := &ResourceRegex{base: &ConfigRegex{BaseRegex: BaseRegex{resourceGroup: resourceGroup, namespace: namespace}}, resourceName: resourceName}
-	conditionalRegex := &ResourceRegex{base: &ConditionalRegex{BaseRegex: BaseRegex{resourceGroup: resourceGroup, namespace: namespace}}, resourceName: resourceName}
+	configRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
+		NewConfigRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		))
+	conditionalRegex := NewResourceRegex(resourceGroup, resourceName, namespace,
+		NewConditionalRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		),
+	)
 	regs := []string{configRegex.getPart(), conditionalRegex.getPart()}
 
 	log.Debugf("Searching tar file for regex '%s'\n", regs)
@@ -136,8 +147,7 @@ func readResources(tr *tar.Reader, resourceGroup, resourceName, namespace, overr
 }
 
 func readLogs(tr *tar.Reader, resourceGroup, resourceName, namespace, containerName string, previous bool) io.ReadCloser {
-	regex := &LogRegex{base: &ConfigRegex{BaseRegex: BaseRegex{resourceGroup: resourceGroup, namespace: namespace}}, resourceName: resourceName, containerName: containerName, previous: previous}
-	//regex := &LogRegex{base: &ConfigRegex{resourceGroup: resourceGroup, namespace: namespace}, resourceName: resourceName, containerName: containerName, previous: previous}
+	regex := NewLogRegex(resourceGroup, resourceName, namespace, containerName, previous)
 	regs := []string{regex.getPart()}
 	log.Debugf("Searching tar file for regex '%s'\n", regs)
 	for {
@@ -167,13 +177,13 @@ func wellKnownInsightsJson(resourceGroup string) string {
 
 // check if the current file header name matches any of the regexes
 func resourceFilename(regs []string, in string) string {
-	log.Tracef("scanning '%s'\n", in)
+	log.Tracef("scanning '%s'", in)
 	for _, r := range regs {
-		log.Tracef("with '%s'\n", r)
+		log.Tracef("with '%s'", r)
 		re := regexp.MustCompile(r)
 		match := re.FindString(in)
 		if match != "" {
-			log.Tracef("found match for '%s' on %s\n", r, in)
+			log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
 			return match
 		}
 	}

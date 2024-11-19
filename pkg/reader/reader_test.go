@@ -232,9 +232,8 @@ func TestResourceFromInsights(t *testing.T) {
 			got := readResources(tr, tc.resourceGroup, tc.resourceName, tc.namespace, "", "")
 
 			if !reflect.DeepEqual(got, tc.expected) {
-				t.Fatalf("Expected: %v, got: %+v", tc.expected, got)
+				t.Fatalf("Expected: %+v, got: %+v", tc.expected, got)
 			}
-			t.Logf("got: %v\n", got)
 		})
 	}
 }

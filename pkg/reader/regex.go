@@ -17,20 +17,46 @@ package reader
 
 import (
 	"github.com/bverschueren/in2un/pkg/helpers"
+	log "github.com/sirupsen/logrus"
 )
 
-type Regex interface {
+type IRegex interface {
 	getPart() string
 }
 
-type BaseRegex struct {
-	resourceGroup, namespace string
+func NewRegex(resourceGroup, resourceName, namespace string) IRegex {
+	return &Regex{
+		resourceGroup: resourceGroup,
+		resourceName:  resourceName,
+		namespace:     namespace,
+	}
 }
 
-func (b *BaseRegex) getPart() string { return "" }
+type Regex struct {
+	resourceGroup, resourceName, namespace string
+}
+
+func (b *Regex) getPart() string { return "" }
 
 type ConfigRegex struct {
-	BaseRegex
+	Regex
+	base IRegex
+}
+
+// ConfigRegex is the "intermediate" regex: base->intermediate (e.g. ConditionalRegex) ->final
+func NewConfigRegex(resourceGroup, resourceName, namespace string) IRegex {
+	return &ConfigRegex{
+		Regex: Regex{
+			resourceGroup: resourceGroup,
+			resourceName:  resourceName,
+			namespace:     namespace,
+		},
+		base: NewRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		),
+	}
 }
 
 func (c *ConfigRegex) getPart() string {
@@ -47,23 +73,55 @@ func (c *ConfigRegex) getPart() string {
 			reg += c.namespace + `/`
 		}
 	}
+	log.Tracef("got part '%s'", reg)
 	return reg
 }
 
 type ConditionalRegex struct {
-	BaseRegex
+	Regex
+	base IRegex
+}
+
+// ConditionalRegex is the "intermediate" regex: base->intermediate (e.g. ConditionalRegex) ->final
+func NewConditionalRegex(resourceGroup, resourceName, namespace string) IRegex {
+	return &ConditionalRegex{
+		Regex: Regex{
+			resourceGroup: resourceGroup,
+			resourceName:  resourceName,
+			namespace:     namespace,
+		},
+		base: NewRegex(
+			resourceGroup,
+			resourceName,
+			namespace,
+		),
+	}
 }
 
 func (c *ConditionalRegex) getPart() string {
 	if c.namespace == "_all_" {
 		c.namespace = `[a-z0-9\-]+`
 	}
-	return `^conditional/namespaces/` + c.namespace + `/` + helpers.Plural(c.resourceGroup) + `/`
+	reg := `^conditional/namespaces/` + c.namespace + `/` + helpers.Plural(c.resourceGroup) + `/`
+	log.Tracef("got part '%s'", reg)
+	return reg
 }
 
 type ResourceRegex struct {
-	resourceName string
-	base         Regex
+	Regex
+	base IRegex
+}
+
+// ResourceRegex is the "final" regex: base->intermediate (e.g. ConfigRegex) ->final
+func NewResourceRegex(resourceGroup, resourceName, namespace string, base IRegex) IRegex {
+	return &ResourceRegex{
+		Regex: Regex{
+			resourceGroup: resourceGroup,
+			resourceName:  resourceName,
+			namespace:     namespace,
+		},
+		base: base,
+	}
 }
 
 func (r *ResourceRegex) getPart() string {
@@ -74,13 +132,27 @@ func (r *ResourceRegex) getPart() string {
 	} else {
 		reg += `[a-z0-9\.\-]+(.json|/[a-z0-9\-\.]+)(.json)?$`
 	}
+	log.Tracef("got part '%s'", reg)
 	return reg
 }
 
 type LogRegex struct {
-	resourceName, containerName string
-	previous                    bool
-	base                        Regex
+	containerName string
+	previous      bool
+	Regex
+	base Regex
+}
+
+func NewLogRegex(resourceGroup, resourceName, namespace, containerName string, previous bool) IRegex {
+	return &LogRegex{
+		Regex: Regex{
+			resourceGroup: resourceGroup,
+			resourceName:  resourceName,
+			namespace:     namespace,
+		},
+		containerName: containerName,
+		previous:      previous,
+	}
 }
 
 func (r *LogRegex) getPart() string {
@@ -100,5 +172,6 @@ func (r *LogRegex) getPart() string {
 	} else {
 		reg += `_current`
 	}
+	log.Tracef("got part '%s'", reg)
 	return reg + `.log`
 }
