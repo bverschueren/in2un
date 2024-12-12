@@ -14,15 +14,10 @@ import (
 
 // apiResourcesCmd represents the apiResources command
 var apiResourcesCmd = &cobra.Command{
-	Use:   "api-resources",
-	Args:  cobra.MaximumNArgs(0),
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Use:    "api-resources",
+	Args:   cobra.MaximumNArgs(0),
+	Short:  "(Experimental) List available resources in an Insights archive.",
+	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		ir, err := reader.NewInsightsReader(viper.GetString("active"))
 		if err != nil {
