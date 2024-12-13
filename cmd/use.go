@@ -17,9 +17,10 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
+
+	"path/filepath"
 
 	"github.com/bverschueren/in2un/pkg/reader"
 	"github.com/spf13/cobra"
@@ -27,24 +28,25 @@ import (
 )
 
 var useCmd = &cobra.Command{
-	Use:   "use",
-	Args:  cobra.MinimumNArgs(1),
-	Short: "Specify the insights file to read from",
+	Use:              "use",
+	Args:             cobra.MinimumNArgs(1),
+	Short:            "Specify the insights file to read from",
+	PersistentPreRun: nil,
 	Run: func(cmd *cobra.Command, args []string) {
-		active, err := reader.NewInsightsReader(args[0])
+		insightsArchive, _ := filepath.Abs(args[0])
+		active, err := reader.NewInsightsReader(insightsArchive)
 		if err != nil {
 			log.Fatal(err)
 		}
-		configDir := filepath.Dir(ConfigFile)
-		err = os.MkdirAll(configDir, 0750)
+		err = os.MkdirAll(ConfigDir, 0750)
 		if err != nil {
 			log.Fatal(err)
 		}
 		viper.Set("active", active.Path)
-		viper.WriteConfigAs(ConfigFile)
+		viper.WriteConfigAs(filepath.Join(ConfigDir, configFileName) + "." + configFileType)
 	},
 }
 
 func init() {
-	RootCmd.AddCommand(useCmd)
+	InsightsCmd.AddCommand(useCmd)
 }

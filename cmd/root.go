@@ -16,57 +16,44 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
 	"os"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
-	RootCmd = &cobra.Command{
+	InsightsCmd = &cobra.Command{
 		Use:   "in2un",
 		Args:  cobra.MinimumNArgs(1),
 		Short: "Parse Insights data as unstructed data or raw log lines.",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			initConfig()
+		},
 	}
 
 	ResourceGroup, ResourceName, Namespace, Active, LogLevel string
 	AllNamespaces                                            bool
-	ConfigFile                                               = "$HOME/.in2un/in2un.json"
+	ConfigDir                                                = "$HOME/.in2un/"
+	configFileName                                           = "in2un"
+	configFileType                                           = "json"
 )
 
 func Execute() {
-	err := RootCmd.Execute()
+	err := InsightsCmd.Execute()
 	if err != nil {
 		os.Exit(1)
 	}
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
-	RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	RootCmd.PersistentFlags().StringVarP(&LogLevel, "loglevel", "v", "warning", "Logging level")
-	RootCmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
-	RootCmd.PersistentFlags().StringVarP(&Active, "insights-file", "", "", "Insights file to read from")
-	viper.BindPFlag("active", RootCmd.PersistentFlags().Lookup("active"))
-}
+	viper.AddConfigPath(ConfigDir)
 
-func initConfig() {
-	level, err := log.ParseLevel(LogLevel)
-	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
-	}
-	log.SetLevel(level)
-	ConfigFile = os.ExpandEnv(ConfigFile)
-	viper.SetConfigFile(ConfigFile)
+	InsightsCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// TODO: fix collision with shorthand "v" set with klog's addGoFlags (omc)
+	InsightsCmd.PersistentFlags().StringVar(&LogLevel, "loglevel", "warning", "Logging level")
+	InsightsCmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
+	InsightsCmd.PersistentFlags().StringVarP(&Active, "insights-file", "", "", "Insights file to read from")
 
-	if err := viper.ReadInConfig(); err != nil {
-		if os.IsNotExist(err) {
-			viper.WriteConfigAs(ConfigFile)
-		} else {
-			fmt.Println("Can't read config:", err)
-		}
-	}
+	viper.BindPFlag("Active", InsightsCmd.PersistentFlags().Lookup("Active"))
 }

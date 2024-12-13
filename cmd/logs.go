@@ -46,7 +46,7 @@ var (
 )
 
 func init() {
-	RootCmd.AddCommand(logsCmd)
+	InsightsCmd.AddCommand(logsCmd)
 
 	logsCmd.Flags().StringVarP(&containerName, "container", "c", "", "Container to read logs from.")
 	logsCmd.Flags().BoolVarP(&previous, "previous", "p", false, "Read from previous logs.")

@@ -34,7 +34,7 @@ var OverrideApiVersion, OverrideKind, Output string
 var getCmd = &cobra.Command{
 	Use:  "get",
 	Args: cobra.MinimumNArgs(1),
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PreRun: func(cmd *cobra.Command, args []string) {
 		if AllNamespaces {
 			Namespace = "_all_" // TODO: export and use global (?) AllNamespaceValue
 		}
@@ -90,7 +90,7 @@ func hasDummyFields(obj *unstructured.UnstructuredList) bool { //TODO: generic w
 }
 
 func init() {
-	RootCmd.AddCommand(getCmd)
+	InsightsCmd.AddCommand(getCmd)
 	//getCmd.PersistentFlags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
 	getCmd.Flags().BoolVarP(&AllNamespaces, "all-namespaces", "A", false, "Set the namespace scope for this CLI request to all namespaces")
 	getCmd.Flags().StringVarP(&Output, "output", "o", "table", "Output format. One of: (json, yaml, name).")

@@ -32,5 +32,5 @@ var apiResourcesCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(apiResourcesCmd)
+	InsightsCmd.AddCommand(apiResourcesCmd)
 }

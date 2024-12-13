@@ -16,7 +16,12 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/spf13/viper"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -55,4 +60,37 @@ func Unalias(alias string) string {
 		return unalias
 	}
 	return alias
+}
+
+func initConfig() {
+	level, err := log.ParseLevel(LogLevel)
+	if err != nil {
+		log.Error(err.Error())
+		os.Exit(1)
+	}
+	log.SetLevel(level)
+
+	ConfigDir = os.ExpandEnv(ConfigDir)
+
+	viper.SetConfigName(configFileName)
+	viper.SetConfigType(configFileType)
+
+	if err := viper.ReadInConfig(); err != nil {
+		configFile := filepath.Join(ConfigDir, configFileName) + "." + configFileType
+		if os.IsNotExist(err) {
+			log.Debugf("Writing config to %s\n", configFile)
+			viper.WriteConfigAs(configFile)
+		} else {
+			// ReadInConfig returns a viper-defined error on not found
+			// https://github.com/spf13/viper/blob/54f2089833b65fa556a510957197de2609059147/viper.go#L1483
+			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+				log.Debugf("Writing config to %s\n", configFile)
+				viper.WriteConfigAs(configFile)
+			} else {
+				fmt.Println("Can't read config:", err)
+			}
+		}
+	} else {
+		log.Debugf("Active insights archive: %s\n", viper.GetString("Active"))
+	}
 }
