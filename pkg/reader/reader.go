@@ -119,24 +119,24 @@ func readResources(tr *tar.Reader, regs []IRegex, overrideApiVersion, overrideKi
 			if resourceFile != "" {
 				var raw bytes.Buffer
 				raw.ReadFrom(tr)
-				object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
-				if stop {
-					result = append(result, *object)
-					return &unstructured.UnstructuredList{
-						Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
-						Items:  result,
+
+				namespace, name, key, isConfigMap := configMapFromFilename(resourceFile)
+				if isConfigMap {
+					configMaps.Upsert(namespace, name, key, raw.String())
+				} else {
+					object, err := insightsDeserializer.JsonToUnstructed(raw.Bytes())
+					if stop {
+						result = append(result, *object)
+						return &unstructured.UnstructuredList{
+							Object: map[string]interface{}{"kind": "List", "apiVersion": "v1"},
+							Items:  result,
+						}
 					}
-				}
-				if err != nil {
-					// still fails, perhaps it's a configmap
-					namespace, name, key, err := configMapFromFilename(resourceFile)
 					if err == nil {
-						configMaps.Upsert(namespace, name, key, raw.String())
+						result = append(result, *object)
 					} else {
 						log.Debug(err)
 					}
-				} else {
-					result = append(result, *object)
 				}
 			}
 		}
@@ -200,26 +200,11 @@ func readLogs(tr *tar.Reader, resourceGroup, resourceName, namespace, containerN
 
 func wellKnownInsightsJson(resourceGroup string) bool {
 	log.Tracef("checking for well-known resource")
-	re := regexp.MustCompile(`config/[a-z0-9]+.json`)
+	re := regexp.MustCompile(`^config/[a-z0-9]+.json`)
 	log.Tracef("matching '%s' for '%s'", resourceGroup, re)
 	return re.Match([]byte(resourceGroup))
 	//return `config/` + resourceGroup + `.json`
 }
-
-// check if the current file header name matches any of the regexes
-//func resourceFilename(regs []string, in string) string {
-//	log.Tracef("scanning '%s'", in)
-//	for _, r := range regs {
-//		log.Tracef("with '%s'", r)
-//		re := regexp.MustCompile(r)
-//		match := re.FindString(in)
-//		if match != "" {
-//			log.Tracef("found match '%s' for '%s' on %s\n", match, r, in)
-//			return match
-//		}
-//	}
-//	return ""
-//}
 
 func containerAndVersionFromFilename(filename string) (string, string) {
 	base := path.Base(strings.TrimSuffix(filename, ".log"))
@@ -231,12 +216,13 @@ func containerAndVersionFromFilename(filename string) (string, string) {
 	}
 }
 
-func configMapFromFilename(tarFilePath string) (namespace, name, key string, err error) {
+func configMapFromFilename(tarFilePath string) (namespace, name, key string, isCM bool) {
+	log.Tracef("checking if '%s' is a ConfigMap", tarFilePath)
 	parts := strings.Split(strings.TrimSuffix(tarFilePath, "/"), "/")
-	if len(parts) != 5 {
-		return "", "", "", deserializer.ErrUnknownResourcePath
+	if len(parts) != 5 || parts[1] != "configmaps" {
+		return "", "", "", false
 	}
-	return parts[2], parts[3], parts[4], nil
+	return parts[2], parts[3], parts[4], true
 }
 
 func resourceTypeFromResourcePath(in string) string {

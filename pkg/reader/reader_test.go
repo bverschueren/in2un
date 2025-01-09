@@ -24,7 +24,11 @@ import (
 	"reflect"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type tarrable struct {
@@ -61,6 +65,28 @@ func generateUnstructuredList(u ...unstructured.Unstructured) *unstructured.Unst
 		Items:  u}
 }
 
+func generateUnstructuredConfigMap(name, namespace string, data map[string]string) unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.GetObjectKind().SetGroupVersionKind(u.GetObjectKind().GroupVersionKind())
+	newObject := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Data: data,
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
+	}
+	result, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&newObject)
+	if err != nil {
+		log.Fatal(err)
+	}
+	u.SetUnstructuredContent(result)
+	return *u
+}
+
 func TestResourceFromInsights(t *testing.T) {
 	fakeObj := []byte(`{"metadata":{},"kind":"FakeKind","apiVersion":"Fake1.2"}`)
 	expectedObj := unstructured.Unstructured{}
@@ -88,19 +114,19 @@ func TestResourceFromInsights(t *testing.T) {
 		},
 		tarrable{
 			Name: "config/configmaps/openshift-config/openshift-install/version",
-			Body: fakeObj,
+			Body: []byte("v1.2.3"),
 		},
 		tarrable{
 			Name: "config/configmaps/openshift-config/openshift-install/invoker",
-			Body: fakeObj,
+			Body: []byte("user"),
 		},
 		tarrable{
 			Name: "config/configmaps/openshift-config/dummy/key",
-			Body: fakeObj,
+			Body: []byte("value"),
 		},
 		tarrable{
 			Name: "config/configmaps/namespace/dummy/key",
-			Body: fakeObj,
+			Body: []byte("value"),
 		},
 		tarrable{
 			Name: "config/machineconfigs/00-master.json",
@@ -176,7 +202,7 @@ func TestResourceFromInsights(t *testing.T) {
 			resourceName:       "openshift-install",
 			overrideApiVersion: "",
 			overrideKind:       "",
-			expected:           generateUnstructuredList(expectedObj, expectedObj),
+			expected:           generateUnstructuredList(generateUnstructuredConfigMap("openshift-install", "openshift-config", map[string]string{"version": "v1.2.3", "invoker": "user"})),
 		},
 		{
 			name:               "return all configmap w namespace",
@@ -185,7 +211,10 @@ func TestResourceFromInsights(t *testing.T) {
 			resourceName:       "",
 			overrideApiVersion: "",
 			overrideKind:       "",
-			expected:           generateUnstructuredList(expectedObj, expectedObj, expectedObj),
+			expected: generateUnstructuredList(
+				generateUnstructuredConfigMap("openshift-install", "openshift-config", map[string]string{"version": "v1.2.3", "invoker": "user"}),
+				generateUnstructuredConfigMap("dummy", "openshift-config", map[string]string{"key": "value"}),
+			),
 		},
 		{
 			name:               "return all configmap across all namespaces",
@@ -194,7 +223,11 @@ func TestResourceFromInsights(t *testing.T) {
 			resourceName:       "",
 			overrideApiVersion: "",
 			overrideKind:       "",
-			expected:           generateUnstructuredList(expectedObj, expectedObj, expectedObj, expectedObj),
+			expected: generateUnstructuredList(
+				generateUnstructuredConfigMap("openshift-install", "openshift-config", map[string]string{"version": "v1.2.3", "invoker": "user"}),
+				generateUnstructuredConfigMap("dummy", "openshift-config", map[string]string{"key": "value"}),
+				generateUnstructuredConfigMap("dummy", "namespace", map[string]string{"key": "value"}),
+			),
 		},
 		{
 			name:               "return machineconfig",
@@ -249,7 +282,7 @@ func TestResourceFromInsights(t *testing.T) {
 			got := readResources(tr, []IRegex{configRegex, conditionalRegex, operatorConfigRegex}, "", "")
 
 			if !reflect.DeepEqual(got, tc.expected) {
-				t.Fatalf("Expected: %+v, got: %+v", tc.expected, got)
+				t.Fatalf("\nExpected: %+v,\n\t got: %+v", tc.expected, got)
 			}
 		})
 	}
