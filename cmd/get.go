@@ -74,7 +74,7 @@ func handleOutput(format string, obj *unstructured.UnstructuredList) {
 			panic(err.Error())
 		}
 	default: //table printer
-		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(printers.NewTablePrinter(printers.PrintOptions{}))
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(printers.NewTablePrinter(printers.PrintOptions{WithNamespace: true, AllowMissingKeys: false}))
 		if err := printr.PrintObj(obj, os.Stdout); err != nil {
 			panic(err.Error())
 		}
