@@ -74,7 +74,13 @@ func handleOutput(format string, obj *unstructured.UnstructuredList) {
 			panic(err.Error())
 		}
 	default: //table printer
-		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(printers.NewTablePrinter(printers.PrintOptions{WithNamespace: true, AllowMissingKeys: false}))
+		// test the first objects for namespaceness
+		// once/if we support multi-resource get, we should do this more accurately
+		options := printers.PrintOptions{}
+		if obj.Items[0].GetNamespace() != "" {
+			options.WithNamespace = true
+		}
+		printr = printers.NewTypeSetter(scheme.Scheme).ToPrinter(printers.NewTablePrinter(options))
 		if err := printr.PrintObj(obj, os.Stdout); err != nil {
 			panic(err.Error())
 		}
