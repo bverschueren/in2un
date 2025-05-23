@@ -33,7 +33,7 @@ func Plural(singular string) string {
 	log.Debug("Using static plural parser as best effort")
 	// add "es" for words ending in "ss" (e.g. storageclass)
 	if string(singular[len(singular)-2:]) == `ss` {
-		return singular + `es?`
+		return singular + `(es)?`
 	}
 	// add ? for words already ending with s as this may indicate plural form already (e.g. pods)
 	if string(singular[len(singular)-1:]) == `s` {

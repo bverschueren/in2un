@@ -140,6 +140,10 @@ func TestResourceFromInsights(t *testing.T) {
 			Name: "config/storage/storageclasses/csi-manila-ceph.json",
 			Body: fakeObj,
 		},
+		tarrable{
+			Name: "config/ingress.json",
+			Body: fakeObj,
+		},
 	}
 
 	tests := []struct {
@@ -252,6 +256,15 @@ func TestResourceFromInsights(t *testing.T) {
 			resourceGroup:      "storageclass",
 			namespace:          "",
 			resourceName:       "standard-csi",
+			overrideApiVersion: "",
+			overrideKind:       "",
+			expected:           generateUnstructuredList(expectedObj),
+		},
+		{
+			name:               "return ingress",
+			resourceGroup:      "ingress",
+			namespace:          "",
+			resourceName:       "",
 			overrideApiVersion: "",
 			overrideKind:       "",
 			expected:           generateUnstructuredList(expectedObj),

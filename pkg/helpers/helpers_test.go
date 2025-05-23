@@ -70,7 +70,7 @@ func TestPlural(t *testing.T) {
 		{
 			name:     "static pluralize for StorageClass",
 			in:       "storageclass",
-			expected: "storageclasses?",
+			expected: "storageclass(es)?",
 		},
 		{
 			name:     "static pluralize regexify already plural Pods",
